@@ -15,7 +15,7 @@
 #include "internal/PollingInput.h"
 #include "internal/Protocol.h"
 #include "internal/Addresses.h"
-
+#include "RS485.h"
 
 #ifndef USART0_RX_vect
 #define USART0_RX_vect USART_RX_vect
@@ -27,7 +27,12 @@
 #define PRR0 PRR
 #endif
 
-namespace DcsBios {
+#ifndef MUXADDRESS
+#define MUXADDRESS 0
+#endif
+
+namespace DcsBios
+{
 	const unsigned char PIN_NC = 0xFF;
 }
 
@@ -40,82 +45,136 @@ Normally, those #defines would go in a separate "config.h" or you would use comp
 do not come with their own build system, we are just putting everything into the header file.
 */
 #ifdef DCSBIOS_RS485_MASTER
-	#include "internal/DcsBiosNgRS485Master.h"
-	#include "internal/DcsBiosNgRS485Master.cpp.inc"
+#include "internal/DcsBiosNgRS485Master.h"
+#include "internal/DcsBiosNgRS485Master.cpp.inc"
 #endif
 #ifdef DCSBIOS_RS485_SLAVE
-	#include "internal/DcsBiosNgRS485Slave.h"
-	#include "internal/DcsBiosNgRS485Slave.cpp.inc"
+#include "internal/DcsBiosNgRS485Slave.h"
+#include "internal/DcsBiosNgRS485Slave.cpp.inc"
 #endif
 #ifdef DCSBIOS_IRQ_SERIAL
 
-	namespace DcsBios {
-		ProtocolParser parser;
+namespace DcsBios
+{
+	ProtocolParser parser;
 
-		ISR(USART0_RX_vect) {
-			volatile uint8_t c = UDR0;
-			parser.processCharISR(c);
-		}
-		
-		void setup() {
-			PRR0 &= ~(1<<PRUSART0);
-			UBRR0H = 0;
-			UBRR0L = 3; // 250000 bps
-			UCSR0A = 0;
-			UCSR0C = (1<<UCSZ00) | (1<<UCSZ01);
-			
-			UCSR0B = (1<<RXEN0) | (1<<TXEN0) | (1<<RXCIE0);
-		}
-		
-		void loop() {
-			PollingInput::pollInputs();
-			ExportStreamListener::loopAll();
-		}
+	ISR(USART0_RX_vect)
+	{
+		volatile uint8_t c = UDR0;
+		parser.processCharISR(c);
+	}
 
-		void resetAllStates() {
-			PollingInput::resetAllStates();
-		}
+	void setup()
+	{
+		PRR0 &= ~(1 << PRUSART0);
+		UBRR0H = 0;
+		UBRR0L = 3; // 250000 bps
+		UCSR0A = 0;
+		UCSR0C = (1 << UCSZ00) | (1 << UCSZ01);
 
-		static void usart_tx(const char* str) {
-			const char* c = str;
-			while (*c) {
-				while(!(UCSR0A & (1<<UDRE0))); // wait until TX buffer is empty
-				UDR0 = *c++; // write byte to TX buffer
-			}
-		}
-		
-		bool tryToSendDcsBiosMessage(const char* msg, const char* arg) {
-			DcsBios::usart_tx(msg);
-			DcsBios::usart_tx(" ");
-			DcsBios::usart_tx(arg);
-			DcsBios::usart_tx("\n");
-			DcsBios::PollingInput::setMessageSentOrQueued();
-			return true;
+		UCSR0B = (1 << RXEN0) | (1 << TXEN0) | (1 << RXCIE0);
+	}
+
+	void loop()
+	{
+		PollingInput::pollInputs();
+		ExportStreamListener::loopAll();
+	}
+
+	void resetAllStates()
+	{
+		PollingInput::resetAllStates();
+	}
+
+	static void usart_tx(const char *str)
+	{
+		const char *c = str;
+		while (*c)
+		{
+			while (!(UCSR0A & (1 << UDRE0)))
+				;		 // wait until TX buffer is empty
+			UDR0 = *c++; // write byte to TX buffer
 		}
 	}
+
+	bool tryToSendDcsBiosMessage(const char *msg, const char *arg)
+	{
+		DcsBios::usart_tx(msg);
+		DcsBios::usart_tx(" ");
+		DcsBios::usart_tx(arg);
+		DcsBios::usart_tx("\n");
+		DcsBios::PollingInput::setMessageSentOrQueued();
+		return true;
+	}
+}
 #endif
 #ifdef DCSBIOS_DEFAULT_SERIAL
-	namespace DcsBios {
-		ProtocolParser parser;
-		void setup() {
-			Serial.begin(250000);
-		}
-		void loop() {
-			while (Serial.available()) {
-				parser.processChar(Serial.read());
-			}
-			PollingInput::pollInputs();
-			ExportStreamListener::loopAll();			
-		}
-		bool tryToSendDcsBiosMessage(const char* msg, const char* arg) {
-			Serial.write(msg); Serial.write(' '); Serial.write(arg); Serial.write('\n');
-			DcsBios::PollingInput::setMessageSentOrQueued();
-			return true;
-		}
-		void resetAllStates() {
-			PollingInput::resetAllStates();
-		}
+namespace DcsBios
+{
+	ProtocolParser parser;
+	void setup()
+	{
+		Serial.begin(250000);
 	}
+	void loop()
+	{
+		while (Serial.available())
+		{
+			parser.processChar(Serial.read());
+		}
+		PollingInput::pollInputs();
+		ExportStreamListener::loopAll();
+	}
+	bool tryToSendDcsBiosMessage(const char *msg, const char *arg)
+	{
+		Serial.write(msg);
+		Serial.write(' ');
+		Serial.write(arg);
+		Serial.write('\n');
+		DcsBios::PollingInput::setMessageSentOrQueued();
+		return true;
+	}
+	void resetAllStates()
+	{
+		PollingInput::resetAllStates();
+	}
+}
+#endif
+#ifdef DCSBIOS_MUX_SERIAL
+namespace DcsBios
+{
+	uint8_t buffer[32];
+	RS485 muxBus(&Serial1, 5, MUXADDRESS);
+	ProtocolParser parser;
+	int count = 0;
+
+	void setup()
+	{
+		Serial.begin(250000);
+		Serial1.begin(250000);
+		while (!Serial1)
+		{
+		};
+	}
+	void loop()
+	{
+		PollingInput::pollInputs();
+		ExportStreamListener::loopAll();
+	}
+
+	bool tryToSendDcsBiosMessage(const char *msg, const char *arg)
+	{
+		sprintf((char *)buffer, "%s %s\n", msg, arg);
+		muxBus.send(0, buffer, strlen((char *)buffer));
+		// muxBus.write(msg); muxBus.write(' '); muxBus.write(arg); muxBus.write('\n');
+		DcsBios::PollingInput::setMessageSentOrQueued();
+		return true;
+	}
+	void resetAllStates()
+	{
+		PollingInput::resetAllStates();
+	}
+}
 #endif
 
 #include "internal/Buttons.h"
@@ -137,33 +196,44 @@ do not come with their own build system, we are just putting everything into the
 #endif
 #include "internal/DualModeButton.h"
 
-namespace DcsBios {
-	template<unsigned int first, unsigned int second>
-	unsigned int piecewiseMap(unsigned int newValue) {
+namespace DcsBios
+{
+	template <unsigned int first, unsigned int second>
+	unsigned int piecewiseMap(unsigned int newValue)
+	{
 		return 0;
 	}
 
-	template<unsigned int from1, unsigned int to1, unsigned int from2, unsigned int to2, unsigned int... rest>
-	unsigned int piecewiseMap(unsigned int newValue) {
-		if (newValue < from2) {
+	template <unsigned int from1, unsigned int to1, unsigned int from2, unsigned int to2, unsigned int... rest>
+	unsigned int piecewiseMap(unsigned int newValue)
+	{
+		if (newValue < from2)
+		{
 			return map(newValue, from1, from2, to1, to2);
-		} else {
+		}
+		else
+		{
 			return piecewiseMap<from2, to2, rest...>(newValue);
 		}
 	}
 }
 
 #ifndef DCSBIOS_RS485_MASTER
-namespace DcsBios {	
-	inline bool sendDcsBiosMessage(const char* msg, const char* arg) {
-		while(!tryToSendDcsBiosMessage(msg, arg));
+namespace DcsBios
+{
+	inline bool sendDcsBiosMessage(const char *msg, const char *arg)
+	{
+		while (!tryToSendDcsBiosMessage(msg, arg))
+			;
 		return true;
 	}
 }
 
 // for backwards compatibility, can be removed when we have a proper place to document this interface:
-inline bool sendDcsBiosMessage(const char* msg, const char* arg) {
-	while(!DcsBios::tryToSendDcsBiosMessage(msg, arg));
+inline bool sendDcsBiosMessage(const char *msg, const char *arg)
+{
+	while (!DcsBios::tryToSendDcsBiosMessage(msg, arg))
+		;
 	return true;
 }
 #endif
