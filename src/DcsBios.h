@@ -162,6 +162,27 @@ namespace DcsBios
 		ExportStreamListener::loopAll();
 	}
 
+        uint8_t id;
+        uint8_t inBuffer[32];
+        uint8_t length;
+        unsigned int value;
+
+	       unsigned int CheckBus(String _address)
+        {
+            if (muxBus.receive(id, inBuffer, length))
+            {
+                inBuffer[length] = 0;
+                String string = (char *)inBuffer;
+                String address = string.substring(0, 4);
+                if (address.equals(_address))
+                {
+                    String data = string.substring(4, string.length());
+                    value = data.toInt();
+                }
+            }
+            return value;
+        }
+
 	bool tryToSendDcsBiosMessage(const char *msg, const char *arg)
 	{
 		sprintf((char *)buffer, "%s %s\n", msg, arg);
@@ -237,5 +258,7 @@ inline bool sendDcsBiosMessage(const char *msg, const char *arg)
 	return true;
 }
 #endif
+
+
 
 #endif // include guard
