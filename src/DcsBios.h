@@ -31,6 +31,14 @@
 #define MUXADDRESS 0
 #endif
 
+#ifndef MUXPIN
+#define MUXPIN 5
+#endif
+
+#ifndef MEGAMUX
+#define MEGAMUX false
+#endif
+
 namespace DcsBios
 {
 	const unsigned char PIN_NC = 0xFF;
@@ -144,14 +152,21 @@ namespace DcsBios
 namespace DcsBios
 {
 	uint8_t buffer[32];
-	RS485 muxBus(&Serial1, 5, MUXADDRESS);
+	if (MEGAMUX)
+	{
+		RS485 muxBus(&Serial, MUXPIN, MUXADDRESS);
+	}
+	else if (MEGAMUX == false)
+	{
+		RS485 muxBus($Serial1, MUXPIN, MUXADDRESS);
+	}
 	ProtocolParser parser;
 	int count = 0;
 
 	void setup()
 	{
 		Serial.begin(250000);
-		Serial1.begin(250000);
+		// Serial1.begin(250000);
 		// while (!Serial1)
 		// {
 		// };
@@ -171,11 +186,14 @@ namespace DcsBios
 	{
 		if (muxBus.receive(id, inBuffer, length))
 		{
+			// Serial.println("Got Message From ");
+			Serial.println(id);
 			inBuffer[length] = 0;
 			String string = (char *)inBuffer;
 			String address = string.substring(0, 4);
 			if (address.equals(_address))
 			{
+				// Serial.println("Got address");
 				String data = string.substring(4, string.length());
 				value = data.toInt();
 			}
